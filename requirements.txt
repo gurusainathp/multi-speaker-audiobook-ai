@@ -1,0 +1,38 @@
+# =============================================================
+# Multi-Speaker Emotional Audiobook Generator
+# requirements.txt
+# =============================================================
+
+# ── OpenAI API (LLM + TTS) ───────────────────────────────────
+openai>=1.30.0
+
+# ── PDF Parsing ───────────────────────────────────────────────
+pdfplumber>=0.10.0        # Primary PDF text extractor
+pymupdf>=1.24.0           # Alternative / fallback PDF parser (also known as fitz)
+
+# ── Audio Processing ──────────────────────────────────────────
+pydub>=0.25.1             # Audio segment merging and manipulation
+# Note: pydub requires ffmpeg to be installed separately on your system.
+# See README for installation instructions.
+
+# ── Environment & Config ──────────────────────────────────────
+python-dotenv>=1.0.0      # Load OPENAI_API_KEY from .env file
+
+# ── Utilities ─────────────────────────────────────────────────
+tqdm>=4.66.0              # Progress bars for batch TTS generation
+pathlib2>=2.3.7           # Path handling (backport, safe to include)
+
+# ── Optional: Web UI / API Backend ────────────────────────────
+# Uncomment these if you add a web interface
+# fastapi>=0.111.0
+# uvicorn>=0.29.0
+# streamlit>=1.35.0
+
+# ── Optional: Development & Testing ───────────────────────────
+# pytest>=8.0.0
+# black>=24.0.0
+# flake8>=7.0.0
+
+# ── Optional: Jupyter Notebooks ───────────────────────────────
+# jupyter>=1.0.0
+# ipykernel>=6.29.0

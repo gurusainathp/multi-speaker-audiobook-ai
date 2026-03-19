@@ -1,0 +1,110 @@
+# =============================================================
+# Multi-Speaker Emotional Audiobook Generator
+# .gitignore
+# =============================================================
+
+# ── Secrets & Environment ─────────────────────────────────────
+.env
+.env.*
+*.key
+secrets.json
+
+# ── Data Directories ──────────────────────────────────────────
+# Exclude all generated/processed data from version control.
+# These are large files that should be stored elsewhere (e.g. cloud storage).
+data/input_pdfs/
+data/extracted_text/
+data/scripts/
+data/audio_segments/
+data/final_audio/
+
+# Keep the folder structure but not the contents
+!data/input_pdfs/.gitkeep
+!data/extracted_text/.gitkeep
+!data/scripts/.gitkeep
+!data/audio_segments/.gitkeep
+!data/final_audio/.gitkeep
+
+# ── Audio & Media Files ───────────────────────────────────────
+*.mp3
+*.wav
+*.ogg
+*.flac
+*.aac
+*.m4a
+
+# ── PDF Files ─────────────────────────────────────────────────
+# Exclude input PDFs from repo (can be large)
+*.pdf
+
+# ── Python ────────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*$py.class
+*.pyo
+*.pyd
+.Python
+*.pyc
+
+# Virtual environments
+venv/
+.venv/
+env/
+ENV/
+.env/
+*.egg
+*.egg-info/
+dist/
+build/
+eggs/
+parts/
+var/
+sdist/
+develop-eggs/
+.installed.cfg
+lib/
+lib64/
+
+# ── Jupyter Notebooks ─────────────────────────────────────────
+.ipynb_checkpoints/
+*.ipynb_checkpoints
+
+# ── IDEs & Editors ────────────────────────────────────────────
+.vscode/
+.idea/
+*.sublime-project
+*.sublime-workspace
+*.swp
+*.swo
+*~
+.DS_Store
+
+# ── OS Files ──────────────────────────────────────────────────
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+desktop.ini
+
+# ── Logs & Temp Files ─────────────────────────────────────────
+*.log
+logs/
+tmp/
+temp/
+.cache/
+
+# ── Testing ───────────────────────────────────────────────────
+.pytest_cache/
+.coverage
+htmlcov/
+coverage.xml
+*.coveragerc
+
+# ── Node (if frontend is added later) ────────────────────────
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
