@@ -8,22 +8,42 @@ openai>=1.30.0
 
 # ── PDF Parsing ───────────────────────────────────────────────
 pdfplumber>=0.10.0        # Primary PDF text extractor
-pymupdf>=1.24.0           # Alternative / fallback PDF parser (also known as fitz)
+pymupdf>=1.24.0           # Alternative / fallback PDF parser (import as fitz)
+
+# ── Document Formats ──────────────────────────────────────────
+python-docx>=1.1.0        # .docx (Word) file loading
+ebooklib>=0.18            # .epub file loading
+striprtf>=0.0.26          # .rtf file loading
+
+# ── HTML / Web Content ────────────────────────────────────────
+beautifulsoup4>=4.12.0    # HTML + EPUB text extraction
+lxml>=5.0.0               # Fast HTML parser backend for BeautifulSoup
+
+# ── Encoding Detection ────────────────────────────────────────
+chardet>=5.2.0            # Detect encoding of non-UTF-8 text files
 
 # ── Audio Processing ──────────────────────────────────────────
 pydub>=0.25.1             # Audio segment merging and manipulation
-# Note: pydub requires ffmpeg to be installed separately on your system.
-# See README for installation instructions.
+# Note: pydub requires ffmpeg installed on your system.
+# macOS: brew install ffmpeg | Ubuntu: sudo apt install ffmpeg
 
 # ── Environment & Config ──────────────────────────────────────
 python-dotenv>=1.0.0      # Load OPENAI_API_KEY from .env file
 
 # ── Utilities ─────────────────────────────────────────────────
 tqdm>=4.66.0              # Progress bars for batch TTS generation
-pathlib2>=2.3.7           # Path handling (backport, safe to include)
+
+# ── Optional: OCR for scanned PDFs ───────────────────────────
+# pytesseract>=0.3.10
+# opencv-python>=4.9.0
+
+# ── Optional: Language Detection ─────────────────────────────
+# langdetect>=1.0.9
+
+# ── Optional: Token Counting (OpenAI context limits) ─────────
+# tiktoken>=0.7.0
 
 # ── Optional: Web UI / API Backend ────────────────────────────
-# Uncomment these if you add a web interface
 # fastapi>=0.111.0
 # uvicorn>=0.29.0
 # streamlit>=1.35.0
