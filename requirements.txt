@@ -41,7 +41,7 @@ tqdm>=4.66.0              # Progress bars for batch TTS generation
 # langdetect>=1.0.9
 
 # ── Optional: Token Counting (OpenAI context limits) ─────────
-# tiktoken>=0.7.0
+tiktoken>=0.7.0
 
 # ── Optional: Web UI / API Backend ────────────────────────────
 # fastapi>=0.111.0
