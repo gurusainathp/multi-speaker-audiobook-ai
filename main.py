@@ -7,9 +7,9 @@ Always run from the project root.
 Current steps:
     [1] Load + extract text from input file   ✅
     [2] Detect dialogue / speakers / emotions  ✅
+    [3] Clean script + assign voices           ✅
 
 Planned steps:
-    [3] JSON cleanup and validation
     [4] TTS audio generation
     [5] Audio merge → final audiobook
 
@@ -46,13 +46,10 @@ def step_2_detect_dialogue(text: str, stem: str, save: bool) -> list:
     return detect_dialogue(text, save=save, stem=stem)
 
 
-def step_3_clean_script(raw_script: list) -> list:
-    """Step 3 — Validate and clean the structured JSON script (gpt-4.1-nano)."""
-    # TODO: implement in src/script_parser/json_cleaner.py
-    logging.getLogger(__name__).warning(
-        "[Step 3] JSON cleaning not yet implemented — skipping."
-    )
-    return raw_script  # pass through raw until cleaner is built
+def step_3_clean_script(raw_script: list, stem: str, save: bool, skip_llm: bool) -> list:
+    """Step 3 — Validate, clean, and assign voices via gpt-4.1-nano."""
+    from src.script_parser.json_cleaner import clean_script
+    return clean_script(raw_script, save=save, stem=stem, skip_llm=skip_llm)
 
 
 def step_4_generate_audio(script: list) -> list:
@@ -101,36 +98,59 @@ def run_pipeline(input_path: str, save: bool, skip_llm: bool, verbose: bool) -> 
         print("\n[Step 2/5] Skipping dialogue detection (--skip-llm).")
         raw_script = []
     else:
-        print(f"\n[Step 2/5] Detecting dialogue and speakers (model: gpt-4o-mini)...")
+        print(f"\n[Step 2/5] Detecting dialogue and speakers  (gpt-4o-mini)...")
         try:
             raw_script = step_2_detect_dialogue(text, stem=stem, save=save)
         except (EnvironmentError, RuntimeError, ValueError) as e:
             logger.error(str(e))
             sys.exit(1)
 
-        output_json = Path("data/scripts") / f"{stem}_raw.json"
+        output_raw = Path("data/scripts") / f"{stem}_raw.json"
         print(f"  ✅ Detected {len(raw_script)} segment(s)")
         if save:
-            print(f"  💾 Saved  →  {output_json}")
+            print(f"  💾 Saved  →  {output_raw}")
 
-        # Print a short preview
         print()
-        for seg in raw_script[:4]:
+        for seg in raw_script[:3]:
             tag = f"[{seg.get('type','?').upper():<10}]"
             spk = f"{seg.get('speaker','?'):<12}"
             emo = f"({seg.get('emotion','?'):<14})"
-            txt = seg.get('text','')[:55] + ("..." if len(seg.get('text','')) > 55 else "")
+            txt = seg.get('text','')[:52] + ("..." if len(seg.get('text','')) > 52 else "")
             print(f"    {tag} {spk} {emo}  {txt}")
-        if len(raw_script) > 4:
-            print(f"    ... and {len(raw_script) - 4} more segment(s)")
+        if len(raw_script) > 3:
+            print(f"    ... and {len(raw_script) - 3} more segment(s)")
 
     # ── Step 3 ───────────────────────────────────────────────
-    print("\n[Step 3/5] Cleaning and validating script JSON...")
-    clean_script = step_3_clean_script(raw_script)
+    if skip_llm:
+        print("\n[Step 3/5] Skipping script cleaning (--skip-llm).")
+        clean = []
+    else:
+        print(f"\n[Step 3/5] Cleaning script + assigning voices  (gpt-4.1-nano)...")
+        try:
+            clean = step_3_clean_script(raw_script, stem=stem, save=save, skip_llm=False)
+        except (EnvironmentError, RuntimeError, ValueError) as e:
+            logger.error(str(e))
+            sys.exit(1)
+
+        output_clean = Path("data/scripts") / f"{stem}_clean.json"
+        print(f"  ✅ Cleaned {len(clean)} segment(s)")
+        if save:
+            print(f"  💾 Saved  →  {output_clean}")
+
+        # Voice cast summary
+        seen: dict[str, str] = {}
+        for seg in clean:
+            sp = seg.get("speaker", "?")
+            if sp not in seen:
+                seen[sp] = seg.get("tts_voice", "?")
+        print()
+        print("  🎭 Voice cast:")
+        for sp, v in seen.items():
+            print(f"      {sp:<16}  →  {v}")
 
     # ── Step 4 ───────────────────────────────────────────────
     print("\n[Step 4/5] Generating TTS audio segments...")
-    audio_files = step_4_generate_audio(clean_script)
+    audio_files = step_4_generate_audio(clean)
 
     # ── Step 5 ───────────────────────────────────────────────
     final_output = f"data/final_audio/{stem}.mp3"
@@ -140,10 +160,13 @@ def run_pipeline(input_path: str, save: bool, skip_llm: bool, verbose: bool) -> 
     # ── Summary ──────────────────────────────────────────────
     print("\n" + "─" * 57)
     print("  Pipeline run complete.")
-    print(f"  Input : {input_path}")
-    if save and not skip_llm and raw_script:
-        print(f"  Text  : {output_txt}")
-        print(f"  Script: {Path('data/scripts') / f'{stem}_raw.json'}")
+    print(f"  Input  : {input_path}")
+    if save and not skip_llm:
+        print(f"  Text   : {output_txt}")
+        if raw_script:
+            print(f"  Raw    : {Path('data/scripts') / f'{stem}_raw.json'}")
+        if clean:
+            print(f"  Clean  : {Path('data/scripts') / f'{stem}_clean.json'}")
     print("─" * 57 + "\n")
 
 
@@ -172,7 +195,7 @@ def _build_arg_parser() -> argparse.ArgumentParser:
     )
     p.add_argument(
         "--skip-llm", action="store_true",
-        help="Skip Step 2 (no OpenAI call). Useful for testing Step 1 only.",
+        help="Skip Steps 2 and 3 (no OpenAI calls). Useful for testing Step 1 only.",
     )
     p.add_argument(
         "--verbose", "-v", action="store_true",
