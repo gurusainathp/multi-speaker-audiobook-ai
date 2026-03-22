@@ -73,7 +73,7 @@ Story text:
 
 # ════════════════════════════════════════════════════════════════════════════
 # STEP 3 — JSON Cleanup, Schema Upgrade, Voice + Acting Assignment
-# Model: gpt-4o  (upgraded from gpt-4.1-nano — richer schema needs it)
+# Model: gpt-4.1  (same tier as gpt-4o, ~20% cheaper — $2.00/$8.00 per 1M)
 # ════════════════════════════════════════════════════════════════════════════
 
 CLEANER_SYSTEM_PROMPT = """\
@@ -218,3 +218,51 @@ VALID_EMOTIONS = {
     "disgusted", "excited", "melancholic", "contemplative",
     "tense", "gentle", "bitter", "hopeful",
 }
+
+
+# ════════════════════════════════════════════════════════════════════════════
+# STEP 5 — Freesound Search Query Generator
+# Model: gpt-4o-mini  (cheap, more than capable for this task)
+#
+# Why gpt-4o-mini and not something cheaper?
+#   The task is generating a 3-5 word Freesound search query from a scene
+#   description. This requires basic semantic understanding (knowing that
+#   "old wooden library door" is better than "door_creak") but zero
+#   reasoning depth. gpt-4o-mini at $0.15/$0.60 per 1M tokens is the
+#   correct tier — cheaper than gpt-4.1-mini (2.7x more expensive) with
+#   identical output quality for this classification-level task.
+#   The entire Step 5 costs less than $0.001 for a full story.
+# ════════════════════════════════════════════════════════════════════════════
+
+SFX_QUERY_SYSTEM_PROMPT = """\
+You are a sound designer for an audiobook production system.
+Your job is to generate short, precise Freesound.org search queries.
+You must return ONLY the search query — no explanation, no punctuation, no extra words.
+"""
+
+SFX_QUERY_USER_PROMPT = """\
+Generate a Freesound.org search query for the following sound needed in an audiobook scene.
+
+Sound needed: <<SOUND_NAME>>
+Scene context: <<SCENE_CONTEXT>>
+Sound type: <<SOUND_TYPE>>
+
+Rules:
+1. Return 2-5 words maximum — shorter is better for Freesound search.
+2. Use descriptive, realistic terms that would appear in a sound library.
+3. Prefer specific over generic: "wooden door creak" beats "door sound".
+4. For ambience: focus on the environment, not events ("old library quiet", "night forest wind").
+5. For sfx: focus on the action and material ("footsteps stone floor", "glass breaking").
+6. Do NOT include the word "sound", "effect", "sfx", "audio", or "clip".
+7. Return ONLY the query. Nothing else.
+
+Examples:
+  door_creak + library interior  → wooden door creak slow
+  night_wind + outdoor night     → night wind gentle rustle
+  footsteps_stone + corridor     → footsteps stone corridor
+  rain_soft + melancholic scene  → soft rain window indoor
+  fire_crackling + warm interior → fireplace wood crackling
+  thunder_rumble + tense moment  → distant thunder rumble
+
+Search query:
+"""

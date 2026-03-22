@@ -59,7 +59,10 @@ logger = logging.getLogger(__name__)
 
 # ── Constants ─────────────────────────────────────────────────────────────────
 
-MODEL       = "gpt-4o"          # upgraded — richer schema needs stronger model
+MODEL       = "gpt-4.1"          # same capability tier as gpt-4o, ~20% cheaper
+                                  # ($2.00/$8.00 vs $2.50/$10.00 per 1M tokens)
+                                  # DO NOT drop to mini — style/sfx placement
+                                  # requires narrative judgment that mini loses
 MAX_TOKENS  = 8192              # schema v2 segments are larger
 TEMPERATURE = 0.2               # slight creativity for style/sfx, still structured
 OUTPUT_DIR  = Path("data/scripts")
