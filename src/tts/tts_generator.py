@@ -149,7 +149,7 @@ def generate_audio(
             logger.warning(f"[generate_audio] [{i:04d}/{total}] Empty text — skipping segment.")
             continue
 
-        tts_input = _build_tts_prompt(seg)
+        text, instruction = _build_tts_prompt(seg)
 
         speaker = seg.get("speaker", "Unknown")
         emotion = seg.get("emotion", "neutral")
@@ -162,15 +162,19 @@ def generate_audio(
             f"style='{style[:20]}'  i={intens:.1f}  "
             f'"{text[:40]}{"..." if len(text) > 40 else ""}"'
         )
-        logger.debug(
-            f"[generate_audio] [{i:04d}/{total}] TTS input: '{tts_input[:80]}'"
-        )
+        if instruction:
+            logger.debug(
+                f"[generate_audio] [{i:04d}/{total}] instruction='{instruction}'"
+            )
 
         # ── Generate audio ───────────────────────────────────────────────────
         if dry_run:
             out_path.write_bytes(b"")   # empty placeholder
         else:
-            _generate_segment(text=tts_input, voice=voice, speed=speed, out_path=out_path)
+            _generate_segment(
+                text=text, voice=voice, speed=speed,
+                out_path=out_path, instructions=instruction,
+            )
 
         audio_paths.append(out_path)
         generated += 1
@@ -192,32 +196,29 @@ def generate_audio(
 # PRIVATE HELPERS
 # ════════════════════════════════════════════════════════════════════════════
 
-def _build_tts_prompt(seg: dict) -> str:
+def _build_tts_prompt(seg: dict) -> tuple[str, str]:
     """
-    Build the actual string sent to the TTS API for a segment.
+    Build the text and acting instruction for the TTS API.
 
-    For plain text this is just seg["text"].
-    For dialogue and narration we prepend acting instructions so the
-    TTS model performs with the correct emotion, style, and intensity.
+    Returns (text, instruction) as a tuple.
 
-    Format:  "<instruction>: <text>"
-    Example: "sad, slow whisper, very soft: I never meant to hurt you."
+    The OpenAI TTS API accepts an `instructions` parameter separately
+    from `input` — the instruction tells the model HOW to deliver the
+    text but is NEVER spoken aloud. This is the correct approach.
 
-    The OpenAI TTS model (gpt-4o-mini-tts) responds to natural-language
-    acting directions prepended to the input text. This is the correct
-    way to steer performance without changing the spoken words.
+    Do NOT concatenate instruction + text into one string — that causes
+    the model to literally read the instruction words out loud.
 
     Rules:
         dialogue  — always inject emotion + style + intensity level
-        narration — inject emotion only when non-neutral (avoids
-                    over-directing neutral scene-setting prose)
+        narration — inject emotion only when non-neutral
         sfx/ambience — should never reach this function (filtered upstream)
 
-    Returns the raw text unchanged if no acting direction applies.
+    Returns (text, "") with an empty instruction if no direction applies.
     """
     text = str(seg.get("text", "")).strip()
     if not text:
-        return ""
+        return "", ""
 
     seg_type  = str(seg.get("type", "narration")).lower()
     emotion   = str(seg.get("emotion", "neutral")).strip().lower()
@@ -227,37 +228,31 @@ def _build_tts_prompt(seg: dict) -> str:
     parts: list[str] = []
 
     if seg_type == "dialogue":
-        # Always direct dialogue — even neutral lines need presence
         if emotion and emotion != "neutral":
             parts.append(emotion)
-
         if style:
             parts.append(style)
-
-        # Translate intensity float → a natural-language level cue
         if intensity < 0.35:
-            parts.append("very soft")
+            parts.append("very soft and quiet")
         elif intensity < 0.6:
-            parts.append("natural")
+            parts.append("natural conversational tone")
         elif intensity < 0.8:
-            parts.append("strong")
+            parts.append("strong and emotionally present")
         else:
-            parts.append("very intense")
+            parts.append("very intense, full emotional peak")
 
     elif seg_type == "narration":
-        # Only direct narration when emotion is non-neutral —
-        # neutral narration sounds best delivered plainly
         if emotion and emotion != "neutral":
             parts.append(emotion)
         if style:
             parts.append(style)
 
     if parts:
-        instruction = ", ".join(parts)
-        logger.debug(f"[_build_tts_prompt] Instruction: '{instruction}'")
-        return f"{instruction}: {text}"
+        instruction = "Deliver this line with: " + ", ".join(parts) + "."
+        logger.debug(f"[_build_tts_prompt] instruction='{instruction}'")
+        return text, instruction
 
-    return text
+    return text, ""
 
 
 def _generate_segment(
@@ -265,9 +260,16 @@ def _generate_segment(
     voice: str,
     speed: float,
     out_path: Path,
+    instructions: str = "",
 ) -> None:
     """
     Call the OpenAI TTS API and write the audio to out_path.
+
+    `instructions` is passed as a separate parameter to the API — it
+    tells the model how to perform the text but is NEVER spoken aloud.
+    If empty, the model delivers the text in its default style for the
+    chosen voice.
+
     Retries up to RETRY_LIMIT times on transient failures.
     """
     try:
@@ -287,6 +289,7 @@ def _generate_segment(
                 input=text,
                 speed=speed,
                 response_format=OUTPUT_FORMAT,
+                **({"instructions": instructions} if instructions else {}),
             )
             # Stream the audio bytes directly to disk
             response.stream_to_file(str(out_path))

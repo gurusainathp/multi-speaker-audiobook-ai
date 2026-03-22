@@ -153,7 +153,23 @@ def merge_audio(
     loaded: list[tuple[AudioSegment, dict]] = []   # (audio, meta)
 
     for i, meta in enumerate(segments_meta):
-        filename = meta.get("file", "")
+        filename = meta.get("file", "").strip()
+        seg_type = meta.get("type", "narration")
+
+        # ── Skip sfx/ambience with no file yet (Step 5 not run) ──────────────
+        if not filename:
+            if seg_type in ("sfx", "ambience"):
+                logger.warning(
+                    f"[merge_audio] [{i+1:04d}/{total}] "
+                    f"[{seg_type.upper()}] '{meta.get('sound','')}' has no audio file — "
+                    f"skipping (run Step 5 to generate SFX first)."
+                )
+            else:
+                logger.warning(
+                    f"[merge_audio] [{i+1:04d}/{total}] Segment has empty filename — skipping."
+                )
+            continue
+
         file_path = audio_dir / filename
 
         if not file_path.exists():
@@ -170,7 +186,6 @@ def merge_audio(
             # Insert a 1-second silence placeholder so the merge doesn't crash
             segment_audio = AudioSegment.silent(duration=1000)
         else:
-            seg_type = meta.get("type", "narration")
             if seg_type in ("sfx", "ambience"):
                 logger.info(
                     f"[merge_audio] [{i+1:04d}/{total}] Loading {filename}  "
