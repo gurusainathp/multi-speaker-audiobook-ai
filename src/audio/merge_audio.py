@@ -66,11 +66,22 @@ FINAL_DIR    = Path("data/final")
 
 # ── Pause table (milliseconds) ────────────────────────────────────────────────
 # Key: (current_type, next_type)
+# pause_after from manifest takes priority — this table is only the fallback.
 BASE_PAUSE_MS: dict[tuple[str, str], int] = {
     ("narration", "narration"): 500,
     ("narration", "dialogue"):  350,
     ("dialogue",  "narration"): 500,
     ("dialogue",  "dialogue"):  300,
+    # sfx/ambience transitions
+    ("sfx",       "narration"): 500,
+    ("sfx",       "dialogue"):  400,
+    ("sfx",       "sfx"):       200,
+    ("ambience",  "narration"): 0,    # ambience plays under, no gap needed
+    ("ambience",  "dialogue"):  0,
+    ("narration", "sfx"):       300,
+    ("dialogue",  "sfx"):       300,
+    ("narration", "ambience"):  0,
+    ("dialogue",  "ambience"):  0,
 }
 DEFAULT_PAUSE_MS = 400   # fallback if type combo not in table
 
@@ -159,10 +170,19 @@ def merge_audio(
             # Insert a 1-second silence placeholder so the merge doesn't crash
             segment_audio = AudioSegment.silent(duration=1000)
         else:
-            logger.info(
-                f"[merge_audio] [{i+1:04d}/{total}] Loading {filename}  "
-                f"({meta.get('speaker','?')}, {meta.get('emotion','?')})"
-            )
+            seg_type = meta.get("type", "narration")
+            if seg_type in ("sfx", "ambience"):
+                logger.info(
+                    f"[merge_audio] [{i+1:04d}/{total}] Loading {filename}  "
+                    f"[{seg_type.upper()}] sound='{meta.get('sound','?')}'"
+                )
+            else:
+                logger.info(
+                    f"[merge_audio] [{i+1:04d}/{total}] Loading {filename}  "
+                    f"({meta.get('speaker','?')}, {meta.get('emotion','?')}, "
+                    f"style='{meta.get('style','')[:20]}', i={meta.get('intensity',0.5):.1f}, "
+                    f"p={meta.get('pause_after','auto')}ms)"
+                )
             segment_audio = AudioSegment.from_mp3(str(file_path))
 
         loaded.append((segment_audio, meta))
@@ -182,10 +202,7 @@ def merge_audio(
 
         next_meta = loaded[i + 1][1]
 
-        if fixed_pause_ms is not None:
-            pause_ms = fixed_pause_ms
-        else:
-            pause_ms = _calculate_pause(meta, next_meta)
+        pause_ms = _calculate_pause(meta, next_meta, fixed_pause_ms)
 
         total_pause_ms += pause_ms
         final += AudioSegment.silent(duration=pause_ms)
@@ -221,32 +238,43 @@ def merge_audio(
 # SMART PAUSE LOGIC
 # ════════════════════════════════════════════════════════════════════════════
 
-def _calculate_pause(current: dict, next_seg: dict) -> int:
+def _calculate_pause(current: dict, next_seg: dict, fixed_pause_ms: int | None = None) -> int:
     """
-    Calculate the silence gap (ms) to insert after `current` segment,
-    before `next_seg` begins.
+    Calculate the silence gap (ms) to insert after `current` segment.
 
-    Uses a base pause from the type-transition table, then applies
-    additive modifiers from the current segment's emotion and whether
-    the speaker changes.
+    Priority order:
+      1. fixed_pause_ms (CLI override) — ignores everything else
+      2. current["pause_after"] from manifest (set by json_cleaner)
+      3. BASE_PAUSE_MS table + emotion modifier + speaker-change bonus
+
+    This means the LLM's per-segment pacing decisions are respected
+    by default, but can be overridden globally with --fixed-pause.
     """
+    # Priority 1: global CLI override
+    if fixed_pause_ms is not None:
+        return fixed_pause_ms
+
+    # Priority 2: per-segment pause_after from schema v2
+    manifest_pause = current.get("pause_after")
+    if manifest_pause is not None:
+        try:
+            return max(0, int(manifest_pause))
+        except (TypeError, ValueError):
+            pass
+
+    # Priority 3: smart table calculation (fallback for pre-v2 manifests)
     current_type = current.get("type", "narration")
     next_type    = next_seg.get("type", "narration")
     emotion      = current.get("emotion", "neutral")
     current_spk  = current.get("speaker", "")
     next_spk     = next_seg.get("speaker", "")
 
-    # Base pause from transition table
     pause = BASE_PAUSE_MS.get((current_type, next_type), DEFAULT_PAUSE_MS)
-
-    # Emotion modifier
     pause += EMOTION_MODIFIER_MS.get(emotion, 0)
 
-    # Speaker change bonus
     if current_spk and next_spk and current_spk != next_spk:
         pause += SPEAKER_CHANGE_BONUS_MS
 
-    # Never go below minimum
     return max(pause, MIN_PAUSE_MS)
 
 

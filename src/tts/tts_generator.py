@@ -129,29 +129,48 @@ def generate_audio(
             skipped += 1
             continue
 
+        # ── Skip sfx / ambience — no TTS text, handled by merge step ─────────
+        seg_type = str(seg.get("type", "narration")).lower()
+        if seg_type in ("sfx", "ambience"):
+            sound = seg.get("sound", "")
+            logger.info(
+                f"[generate_audio] [{i:04d}/{total}] "
+                f"[{seg_type.upper()}] '{sound}' — no TTS, recorded in manifest."
+            )
+            # Don't append to audio_paths — merge step handles sfx separately
+            continue
+
         # ── Resolve voice ────────────────────────────────────────────────────
         voice = _resolve_voice(seg)
 
-        # ── Resolve text ─────────────────────────────────────────────────────
+        # ── Build TTS input (text + acting instructions) ──────────────────────
         text = str(seg.get("text", "")).strip()
         if not text:
             logger.warning(f"[generate_audio] [{i:04d}/{total}] Empty text — skipping segment.")
             continue
 
+        tts_input = _build_tts_prompt(seg)
+
         speaker = seg.get("speaker", "Unknown")
         emotion = seg.get("emotion", "neutral")
+        style   = seg.get("style", "")
+        intens  = seg.get("intensity", 0.5)
 
         logger.info(
             f"[generate_audio] [{i:04d}/{total}] "
             f"{speaker:<12} ({emotion:<13})  voice={voice:<8}  "
-            f'"{text[:45]}{"..." if len(text) > 45 else ""}"'
+            f"style='{style[:20]}'  i={intens:.1f}  "
+            f'"{text[:40]}{"..." if len(text) > 40 else ""}"'
+        )
+        logger.debug(
+            f"[generate_audio] [{i:04d}/{total}] TTS input: '{tts_input[:80]}'"
         )
 
         # ── Generate audio ───────────────────────────────────────────────────
         if dry_run:
             out_path.write_bytes(b"")   # empty placeholder
         else:
-            _generate_segment(text=text, voice=voice, speed=speed, out_path=out_path)
+            _generate_segment(text=tts_input, voice=voice, speed=speed, out_path=out_path)
 
         audio_paths.append(out_path)
         generated += 1
@@ -172,6 +191,74 @@ def generate_audio(
 # ════════════════════════════════════════════════════════════════════════════
 # PRIVATE HELPERS
 # ════════════════════════════════════════════════════════════════════════════
+
+def _build_tts_prompt(seg: dict) -> str:
+    """
+    Build the actual string sent to the TTS API for a segment.
+
+    For plain text this is just seg["text"].
+    For dialogue and narration we prepend acting instructions so the
+    TTS model performs with the correct emotion, style, and intensity.
+
+    Format:  "<instruction>: <text>"
+    Example: "sad, slow whisper, very soft: I never meant to hurt you."
+
+    The OpenAI TTS model (gpt-4o-mini-tts) responds to natural-language
+    acting directions prepended to the input text. This is the correct
+    way to steer performance without changing the spoken words.
+
+    Rules:
+        dialogue  — always inject emotion + style + intensity level
+        narration — inject emotion only when non-neutral (avoids
+                    over-directing neutral scene-setting prose)
+        sfx/ambience — should never reach this function (filtered upstream)
+
+    Returns the raw text unchanged if no acting direction applies.
+    """
+    text = str(seg.get("text", "")).strip()
+    if not text:
+        return ""
+
+    seg_type  = str(seg.get("type", "narration")).lower()
+    emotion   = str(seg.get("emotion", "neutral")).strip().lower()
+    style     = str(seg.get("style", "")).strip()
+    intensity = float(seg.get("intensity", 0.5))
+
+    parts: list[str] = []
+
+    if seg_type == "dialogue":
+        # Always direct dialogue — even neutral lines need presence
+        if emotion and emotion != "neutral":
+            parts.append(emotion)
+
+        if style:
+            parts.append(style)
+
+        # Translate intensity float → a natural-language level cue
+        if intensity < 0.35:
+            parts.append("very soft")
+        elif intensity < 0.6:
+            parts.append("natural")
+        elif intensity < 0.8:
+            parts.append("strong")
+        else:
+            parts.append("very intense")
+
+    elif seg_type == "narration":
+        # Only direct narration when emotion is non-neutral —
+        # neutral narration sounds best delivered plainly
+        if emotion and emotion != "neutral":
+            parts.append(emotion)
+        if style:
+            parts.append(style)
+
+    if parts:
+        instruction = ", ".join(parts)
+        logger.debug(f"[_build_tts_prompt] Instruction: '{instruction}'")
+        return f"{instruction}: {text}"
+
+    return text
+
 
 def _generate_segment(
     text: str,
@@ -301,14 +388,37 @@ def _write_manifest(
     """
     segments_meta = []
 
-    # Pair each path with its original script segment
-    # audio_paths may be shorter than script if some segments were skipped
+    # audio_paths only contains TTS speech files (sfx/ambience were skipped).
+    # We iterate the full script and record ALL segments in the manifest,
+    # but only consume a file path for speech segments.
     path_iter = iter(audio_paths)
 
     for i, seg in enumerate(script, start=1):
-        text = str(seg.get("text", "")).strip()
+        seg_type = str(seg.get("type", "narration")).lower()
+        text     = str(seg.get("text", "")).strip()
+
+        if seg_type in ("sfx", "ambience"):
+            # Record sfx/ambience in manifest with no file — merge step uses sound field
+            segments_meta.append({
+                "index":       i,
+                "file":        "",
+                "id":          seg.get("id", ""),
+                "type":        seg_type,
+                "speaker":     "Narrator",
+                "emotion":     "neutral",
+                "style":       "",
+                "intensity":   0.5,
+                "pause_after": seg.get("pause_after", 400),
+                "sound":       seg.get("sound", ""),
+                "voice":       "",
+                "tts_voice":   "",
+                "text":        "",
+            })
+            continue
+
+        # Speech segment — must have text and a corresponding audio file
         if not text:
-            continue  # was skipped in main loop
+            continue
 
         try:
             file_path = next(path_iter)
@@ -316,14 +426,19 @@ def _write_manifest(
             break
 
         segments_meta.append({
-            "index":     i,
-            "file":      file_path.name,
-            "speaker":   seg.get("speaker", "Narrator"),
-            "type":      seg.get("type", "narration"),
-            "emotion":   seg.get("emotion", "neutral"),
-            "voice":     seg.get("voice", ""),
-            "tts_voice": seg.get("tts_voice", ""),
-            "text":      text,
+            "index":       i,
+            "file":        file_path.name,
+            "id":          seg.get("id", ""),
+            "type":        seg.get("type", "narration"),
+            "speaker":     seg.get("speaker", "Narrator"),
+            "emotion":     seg.get("emotion", "neutral"),
+            "style":       seg.get("style", ""),
+            "intensity":   seg.get("intensity", 0.5),
+            "pause_after": seg.get("pause_after", 400),
+            "sound":       seg.get("sound", ""),
+            "voice":       seg.get("voice", ""),
+            "tts_voice":   seg.get("tts_voice", ""),
+            "text":        text,
         })
 
     manifest = {
